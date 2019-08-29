@@ -1,3 +1,10 @@
+
+#################################################
+# Written by George Bigham for UCDavis bootcamp
+#################################################
+
+
+
 import numpy as np
 import pandas as pd
 
@@ -8,7 +15,9 @@ from sqlalchemy import create_engine, func
 
 from flask import Flask, jsonify
 
-
+import datetime as dt
+from datetime import timedelta
+from datetime import datetime
 
 #################################################
 # Database Setup
@@ -51,6 +60,7 @@ def home():
         f"/api/v1.0/<start>/<end>"
     )
 
+
 @app.route("/api/v1.0/percipition")
 def prcp():
     # Create our session (link) from Python to the DB
@@ -58,18 +68,12 @@ def prcp():
 
     """Return dates and percipition"""
     # Query measurement
-    results = session.query(Measurement.date, Measurement.prcp).all()
+    results = session.query(Measurement.date, func.sum(Measurement.prcp)).\
+              group_by(Measurement.date).all()
 
     session.close()
 
-    # create dictionary with date as key and prcp as value
-    prcp_by_date = {}
-    for date, prcp in results:
-        prcp_by_date['date'] = date
-        prcp_by_date['prcp'] = prcp
-    
-
-    return jsonify(prcp_by_date)
+    return jsonify(results)
 
 
 
@@ -91,8 +95,91 @@ def stations():
 
 
 
+@app.route("/api/v1.0/tobs")
+def tobs():
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return tobs from last year of data"""
+    # Query last date
+    last_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
+    datetime_object = datetime.strptime(last_date[0], '%Y-%m-%d').date()
+    year_ago = datetime_object - timedelta(days=365)
+
+    sel = [Measurement.station, 
+        Measurement.date, 
+        Measurement.tobs]
+
+    results = session.query(*sel).filter(Measurement.date>=year_ago)
+
+    session.close()
+
+    all_tobs = []
+    for station, date, tobs in results:
+        tobs_dict = {}
+        tobs_dict["station"] = station
+        tobs_dict["date"] = date
+        tobs_dict["tobs"] = tobs
+        all_tobs.append(tobs_dict)
+
+    return jsonify(all_tobs)
 
 
+
+@app.route("/api/v1.0/<start>")
+def start(start):
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return min, avg, and max of temp from start date"""
+    sel = [func.min(Measurement.tobs),
+           func.avg(Measurement.tobs),
+           func.max(Measurement.tobs)]
+
+    results = session.query(*sel).filter(Measurement.date>=start)
+
+    session.close()
+
+    all_stats = []
+    stats_dict = {}
+    stats_dict["min"] = results[0][0]
+    stats_dict["avg"] = results[0][1]
+    stats_dict["max"] = results[0][2]
+    all_stats.append(stats_dict)
+
+    return jsonify(all_stats)
+
+
+
+@app.route("/api/v1.0/<start>/<end>")
+def start_end(start, end):    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return min, avg, and max of temp from start date"""
+    sel = [func.min(Measurement.tobs),
+           func.avg(Measurement.tobs),
+           func.max(Measurement.tobs)]
+
+    results = session.query(*sel).filter(Measurement.date>=start).\
+                filter(Measurement.date<=end).all()
+
+    session.close()
+    
+    all_stats = []   
+    stats_dict = {}
+    stats_dict["min"] = results[0][0]
+    stats_dict["avg"] = results[0][1]
+    stats_dict["max"] = results[0][2]
+    all_stats.append(stats_dict)
+
+
+    return jsonify(all_stats)
+    
+
+
+#################################################
+# Run Flask 
+#################################################
 
 if __name__ == '__main__':
     app.run(debug=True)
